@@ -1,0 +1,4 @@
+libdeps - library rependencies
+
+Read symbols provided and required by several shared libraries,
+deduce the dependency graph between the libraries.
