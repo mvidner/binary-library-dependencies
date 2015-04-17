@@ -31,29 +31,38 @@ dependencies lsMap =
 explode :: (a,[b]) -> [(a,b)]
 explode (a, bs) = map (\b -> (a,b)) bs
 
+providedNames :: [LibSymbol] -> [SymName]
+providedNames = map symName . filter symIsProvided
+
+toProviderNamesAl :: LibSymbols -> [(LibName, SymName)]
+toProviderNamesAl lsMap =
+    let al = M.toList lsMap                         :: [(LibName,[LibSymbol])]
+        provNamesAl = map (second providedNames) al :: [(LibName,[SymName])]
+    in concat $ map explode provNamesAl
 
 toProvider :: LibSymbols -> M.Map SymName LibName
 toProvider lsMap =
-    let unpacked = concat $ map explode $ M.toList lsMap ::[(LibName,LibSymbol)]
-        provided = filter (symIsProvided . snd) unpacked
-        providedNames = map (second symName) provided ::[(LibName,SymName)]
-    in M.fromList $ map swap providedNames
+    M.fromList $ map swap $ toProviderNamesAl lsMap
 
--- toProviders :: LibSymbols -> M.Map SymName [LibName]
--- toProviders lsMap = 
+toProviders :: LibSymbols -> M.Map SymName [LibName]
+toProviders =
+    M.fromListWith (++) . map (\(l,s)->(s,[l])) . toProviderNamesAl
 
+-- ===== statistics =====
+histogram :: Ord a => [a] -> [(a, Int)]
+histogram xs =
+    let xAl = map (\x -> (x,1)) xs
+        histMap = M.fromListWith (+) xAl
+    in M.toList histMap
+
+bucketSizes :: M.Map a [b] -> [(Int,Int)]
+bucketSizes m = map swap $ histogram $ map length $ M.elems m
+
+-- ===== main =====
 main :: IO ()
 main = do
     libFileNames <- getArgs
     allLibSymbolsL <- mapM readLibrarySymbols libFileNames
     let allLibSymbols = M.fromList $ zip libFileNames allLibSymbolsL
-    let provider = toProvider allLibSymbols
-    putStrLn $ show (M.size provider) ++ " symbols provided"
-{-
-    
-    forM_ libFileNames $ \lN -> do
-        syms <- readLibrarySymbols lN
-        print (lN, length syms)
-        putStrLn " sample:"
-        print $ take 5 syms
--}
+    let providers = toProviders allLibSymbols
+    putStrLn $ show (bucketSizes providers) ++ " symbols provided"
