@@ -3,6 +3,7 @@ module Main where
 import Control.Monad (forM_)
 import Control.Applicative
 import System.Environment (getArgs)
+import System.Process (readProcess)
 
 -- | A library symbol, as dumped by 'nm'
 data LibSymbol = LibSymbol
@@ -45,7 +46,10 @@ getLibrarySymbols fileName = do
     return $ parsePosixNmOutput out
 
 runNm :: LibName -> IO String
-runNm fileName = return "fakeRequire U\nfakeProvide T\n"
+runNm fileName =
+    readProcess "nm" ["--dynamic", "--format=posix", fileName] emptyStdin
+  where
+    emptyStdin = ""
 
 main :: IO ()
 main = do
