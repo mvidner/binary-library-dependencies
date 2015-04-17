@@ -1,59 +1,59 @@
 module Main where
 
+import qualified Data.Map as M
+import qualified Data.Set as S
+import Data.Tuple (swap)
+import Control.Arrow (second)
 import Control.Monad (forM_)
-import Control.Applicative
 import System.Environment (getArgs)
-import System.Process (readProcess)
 
--- | A library symbol, as dumped by 'nm'
-data LibSymbol = LibSymbol
-    { symType :: !Char
-    , symName :: !String
-    } deriving (Eq, Show)
+import LibSymbol
 
 type LibName = String
+type SymName = String
 
-symIsProvided :: LibSymbol -> Bool
-symIsProvided lS = symType lS == 'T'
+-- | Adjacency representation of a directed graph:
+--   vertices reachable from a vertex
+-- (for now, ignore Data.Graph and Data.Graph.Wrapper)
+type Graph vertex = M.Map vertex (S.Set vertex)
 
-symIsRequired :: LibSymbol -> Bool
-symIsRequired lS = symType lS == 'U'
+type LibSymbols = M.Map LibName [LibSymbol]
 
-symIsInteresting :: LibSymbol -> Bool
--- symIsInteresting lS = (symIsProvided lS) || (symIsRequired lS)
-symIsInteresting = (||) <$> symIsProvided <*> symIsRequired
+{-
+libraryProvidingSymbol :: SymName -> LibName
+libraryProvidingSymbol s =
 
-parsePosixNmLine :: String -> LibSymbol
-parsePosixNmLine l =
-    LibSymbol { symType = t, symName = n }
-  where
-    (n, rest) = span (/= ' ') l
-    t = rest !! 1
     
--- posix format: name space type [space other-info]
-parsePosixNmOutput :: String -> [LibSymbol]
-parsePosixNmOutput s = map parsePosixNmLine $ lines s
+dependencies :: LibSymbols -> Graph LibName
+dependencies lsMap =
+-}
 
-fakeParsePosixNmOutput :: String -> [LibSymbol]
-fakeParsePosixNmOutput _ =
-    [ LibSymbol { symType = 'U', symName = "IRequire" }
-    , LibSymbol { symType = 'T', symName = "IProvide" }
-    ]
+explode :: (a,[b]) -> [(a,b)]
+explode (a, bs) = map (\b -> (a,b)) bs
 
-getLibrarySymbols :: LibName -> IO [LibSymbol]
-getLibrarySymbols fileName = do
-    out <- runNm fileName
-    return $ parsePosixNmOutput out
 
-runNm :: LibName -> IO String
-runNm fileName =
-    readProcess "nm" ["--dynamic", "--format=posix", fileName] emptyStdin
-  where
-    emptyStdin = ""
+toProvider :: LibSymbols -> M.Map SymName LibName
+toProvider lsMap =
+    let unpacked = concat $ map explode $ M.toList lsMap ::[(LibName,LibSymbol)]
+        provided = filter (symIsProvided . snd) unpacked
+        providedNames = map (second symName) provided ::[(LibName,SymName)]
+    in M.fromList $ map swap providedNames
+
+-- toProviders :: LibSymbols -> M.Map SymName [LibName]
+-- toProviders lsMap = 
 
 main :: IO ()
 main = do
-  libFileNames <- getArgs
-  forM_ libFileNames $ \lN -> do
-         syms <- getLibrarySymbols lN
-         print (lN, length syms)
+    libFileNames <- getArgs
+    allLibSymbolsL <- mapM readLibrarySymbols libFileNames
+    let allLibSymbols = M.fromList $ zip libFileNames allLibSymbolsL
+    let provider = toProvider allLibSymbols
+    putStrLn $ show (M.size provider) ++ " symbols provided"
+{-
+    
+    forM_ libFileNames $ \lN -> do
+        syms <- readLibrarySymbols lN
+        print (lN, length syms)
+        putStrLn " sample:"
+        print $ take 5 syms
+-}
