@@ -2,6 +2,7 @@ module Main where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
+import Data.Maybe (mapMaybe)
 import Data.Tuple (swap)
 import Control.Arrow (second)
 import Control.Monad (forM_)
@@ -17,22 +18,42 @@ type SymName = String
 -- (for now, ignore Data.Graph and Data.Graph.Wrapper)
 type Graph vertex = M.Map vertex (S.Set vertex)
 
+--prettyPrint :: Show vertex => Graph vertex -> String
+prettyPrint :: Graph String -> String
+prettyPrint g =
+    M.foldlWithKey' ppVertex "" g
+  where
+    ppVertex stringSoFar v adjacentVs =
+        stringSoFar ++ (look v) ++ "\n" ++ (ppAdjacent adjacentVs)
+    ppAdjacent vSet = S.foldl' addAdjacent "" vSet
+    addAdjacent s w = s ++ "    " ++ (look w) ++ "\n"
+    -- for generic Show, we need look = show,
+    -- but then we'd have "quoted" "strings" "everywhere"
+    look = id
+
 type LibSymbols = M.Map LibName [LibSymbol]
+type SymProvider = M.Map SymName LibName
 
-{-
-libraryProvidingSymbol :: SymName -> LibName
-libraryProvidingSymbol s =
+requiredSymsToLibSet :: SymProvider -> [SymName] -> S.Set LibName
+requiredSymsToLibSet symProvider syms =
+    let libs = mapMaybe (flip M.lookup $ symProvider) syms :: [LibName]
+    in S.fromList libs
 
-    
-dependencies :: LibSymbols -> Graph LibName
-dependencies lsMap =
--}
+dependencies :: SymProvider -> LibSymbols -> Graph LibName
+dependencies symProvider lsMap =
+    let al = M.toList lsMap                         :: [(LibName,[LibSymbol])]
+        reqSymNamesAl = map (second requiredNames) al::[(LibName,[SymName])]
+        reqLibNamesAl = map (second $ requiredSymsToLibSet symProvider) reqSymNamesAl ::[(LibName, S.Set LibName)]
+    in M.fromList reqLibNamesAl
 
-explode :: (a,[b]) -> [(a,b)]
-explode (a, bs) = map (\b -> (a,b)) bs
+requiredNames :: [LibSymbol] -> [SymName]
+requiredNames = map symName . filter symIsRequired
 
 providedNames :: [LibSymbol] -> [SymName]
 providedNames = map symName . filter symIsProvided
+
+explode :: (a,[b]) -> [(a,b)]
+explode (a, bs) = map (\b -> (a,b)) bs
 
 toProviderNamesAl :: LibSymbols -> [(LibName, SymName)]
 toProviderNamesAl lsMap =
@@ -40,7 +61,7 @@ toProviderNamesAl lsMap =
         provNamesAl = map (second providedNames) al :: [(LibName,[SymName])]
     in concat $ map explode provNamesAl
 
-toProvider :: LibSymbols -> M.Map SymName LibName
+toProvider :: LibSymbols -> SymProvider
 toProvider lsMap =
     M.fromList $ map swap $ toProviderNamesAl lsMap
 
@@ -55,6 +76,8 @@ histogram xs =
         histMap = M.fromListWith (+) xAl
     in M.toList histMap
 
+-- | For a multimap, report [(size,n)] :
+--   values that were size-fold occurred n times
 bucketSizes :: M.Map a [b] -> [(Int,Int)]
 bucketSizes m = map swap $ histogram $ map length $ M.elems m
 
@@ -64,5 +87,8 @@ main = do
     libFileNames <- getArgs
     allLibSymbolsL <- mapM readLibrarySymbols libFileNames
     let allLibSymbols = M.fromList $ zip libFileNames allLibSymbolsL
+    let provider = toProvider allLibSymbols
     let providers = toProviders allLibSymbols
     putStrLn $ show (bucketSizes providers) ++ " symbols provided"
+    putStrLn "Dependencies:"
+    putStrLn $ prettyPrint $ dependencies provider allLibSymbols

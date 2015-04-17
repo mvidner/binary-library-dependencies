@@ -3,6 +3,7 @@ module LibSymbol
            LibSymbol,
            symName,
            symIsProvided,
+           symIsRequired,
 
            readLibrarySymbols
        ) where
